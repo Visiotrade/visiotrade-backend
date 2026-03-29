@@ -369,7 +369,13 @@ app.post('/webhook/stripe', async (req, res) => {
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    try {
+  const payload = req.body.toString('utf8');
+  event = JSON.parse(payload);
+} catch (err) {
+  console.error('❌ Webhook Parse Fehler:', err.message);
+  return res.status(400).send(`Webhook Error: ${err.message}`);
+};
   } catch (err) {
     console.error('❌ Webhook Signatur Fehler:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
