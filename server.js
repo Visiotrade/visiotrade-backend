@@ -39,19 +39,19 @@ async function supabaseQuery(table, params = '') {
   return data;
 }
 
-async function supabaseInsert(table, data) {
-  const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}`, {
-    method: 'POST',
+async function supabaseUpdate(table, id, data) {
+  const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method: 'PATCH',
     headers: {
       'apikey': process.env.SUPABASE_KEY,
       'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
       'Content-Type': 'application/json',
-      'Prefer': 'return=representation',
-      'Accept': 'application/json'
+      'Accept': 'application/json',
+      'Prefer': 'return=minimal'
     },
     body: JSON.stringify(data)
   });
-  return res.json();
+  return res.ok;
 }
 
 async function supabaseUpdate(table, id, data) {
