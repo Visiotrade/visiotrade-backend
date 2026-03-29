@@ -130,7 +130,7 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
   const mwst = netto * 0.19;
   const brutto = netto * 1.19;
   const rechnung = {
-    voucherDate: new Date().toISOString().split('T')[0],
+    voucherDate: new Date().toISOString(),
     address: {
       name: bestellung.kundenname,
       street: bestellung.lieferadresse_strasse || '',
