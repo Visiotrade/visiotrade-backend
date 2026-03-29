@@ -1,14 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' });
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const fetch = require('node-fetch');
 const { createTransport } = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS für Vercel Frontend
 app.use(cors({
   origin: [
     'https://visiotrade-shop.vercel.app',
@@ -17,7 +16,6 @@ app.use(cors({
   ]
 }));
 
-// Webhook braucht raw body
 app.use('/webhook/stripe', express.raw({ type: 'application/json' }));
 app.use('/webhook/paypal', express.raw({ type: 'application/json' }));
 app.use(express.json());
@@ -98,11 +96,7 @@ async function sendeTelegram(chatId, text) {
   const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: 'HTML'
-    })
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
   });
   const data = await res.json();
   if (!data.ok) console.error('Telegram Fehler:', data);
@@ -111,7 +105,6 @@ async function sendeTelegram(chatId, text) {
 async function sendeAdminBenachrichtigung(bestellung) {
   const adminId = process.env.ADMIN_TELEGRAM_ID || process.env.TELEGRAM_ADMIN_ID;
   if (!adminId) { console.error('Kein Admin Telegram ID!'); return; }
-
   const text = `🛒 <b>Neue Bestellung #${bestellung.id}</b>\n\n` +
     `👤 Kunde: ${bestellung.kundenname}\n` +
     `📧 Email: ${bestellung.email}\n` +
@@ -121,7 +114,6 @@ async function sendeAdminBenachrichtigung(bestellung) {
     `🚚 Lieferart: ${bestellung.lieferart}\n` +
     `💳 Zahlung: ${bestellung.zahlungsart}\n` +
     `📊 Status: Bezahlt ✅`;
-
   await sendeTelegram(adminId, text);
 }
 
@@ -132,7 +124,6 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
   const netto = parseFloat(bestellung.gesamtbetrag);
   const mwst = netto * 0.19;
   const brutto = netto * 1.19;
-
   const rechnung = {
     voucherDate: new Date().toISOString().split('T')[0],
     address: {
@@ -154,48 +145,24 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
       },
       discountPercentage: 0
     })),
-    totalPrice: {
-      currency: 'EUR',
-      totalNetAmount: netto,
-      totalTaxAmount: mwst,
-      totalGrossAmount: brutto
-    },
+    totalPrice: { currency: 'EUR', totalNetAmount: netto, totalTaxAmount: mwst, totalGrossAmount: brutto },
     taxConditions: { taxType: 'net' },
-    paymentConditions: {
-      paymentTermLabel: 'Sofortzahlung',
-      paymentTermDuration: 0
-    },
+    paymentConditions: { paymentTermLabel: 'Sofortzahlung', paymentTermDuration: 0 },
     introduction: 'Vielen Dank für Ihren Einkauf bei VisioTrade GmbH.',
     remark: 'Bitte überweisen Sie den Betrag auf unser Konto.'
   };
-
   const res = await fetch('https://api.lexoffice.io/v1/invoices?finalize=true', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
+    headers: { 'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify(rechnung)
   });
-
-  if (!res.ok) {
-    const err = await res.text();
-    console.error('Lexoffice Fehler:', err);
-    return null;
-  }
-
+  if (!res.ok) { console.error('Lexoffice Fehler:', await res.text()); return null; }
   const result = await res.json();
-
   const pdfRes = await fetch(`https://api.lexoffice.io/v1/invoices/${result.id}/document`, {
     headers: { 'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}` }
   });
-
   let pdfBuffer = null;
-  if (pdfRes.ok) {
-    pdfBuffer = await pdfRes.buffer();
-  }
-
+  if (pdfRes.ok) pdfBuffer = await pdfRes.buffer();
   return { id: result.id, pdfBuffer };
 }
 
@@ -206,19 +173,12 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
   console.log(`🔄 Starte Abwicklung für Bestellung ${bestellungId}`);
   try {
     const bestellungen = await supabaseQuery('bestellungen', `?id=eq.${bestellungId}`);
-    if (!bestellungen || !bestellungen[0]) {
-      console.error(`❌ Bestellung ${bestellungId} nicht gefunden`);
-      return;
-    }
+    if (!bestellungen || !bestellungen[0]) { console.error(`❌ Bestellung ${bestellungId} nicht gefunden`); return; }
     const bestellung = bestellungen[0];
     console.log(`✅ Bestellung geladen: ${bestellung.kundenname}`);
 
     const positionen = await supabaseQuery('bestellpositionen', `?bestellung_id=eq.${bestellungId}`);
-
-    await supabaseUpdate('bestellungen', bestellungId, {
-      status: 'bezahlt',
-      zahlungs_id: zahlungsId
-    });
+    await supabaseUpdate('bestellungen', bestellungId, { status: 'bezahlt', zahlungs_id: zahlungsId });
     console.log(`✅ Status auf bezahlt gesetzt`);
 
     for (const pos of positionen) {
@@ -234,7 +194,6 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
 
     let pdfBuffer = null;
     let lexofficeId = null;
-
     if (process.env.LEXOFFICE_API_KEY) {
       console.log(`🔄 Erstelle Lexoffice Rechnung...`);
       const lexResult = await erstelleLexofficeRechnung(bestellung, positionen);
@@ -258,32 +217,14 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
           <p>Sehr geehrte/r ${bestellung.kundenname},</p>
           <p>Ihre Bestellung wurde erfolgreich aufgenommen und bezahlt.</p>
           <table style="width:100%; border-collapse:collapse; margin: 20px 0;">
-            <tr style="background:#F5EDD8;">
-              <td style="padding:10px; font-weight:bold;">Bestellnummer</td>
-              <td style="padding:10px;">#${bestellungId}</td>
-            </tr>
-            <tr>
-              <td style="padding:10px; font-weight:bold;">Nettobetrag</td>
-              <td style="padding:10px;">${netto.toFixed(2).replace('.', ',')} €</td>
-            </tr>
-            <tr style="background:#F5EDD8;">
-              <td style="padding:10px; font-weight:bold;">MwSt. 19%</td>
-              <td style="padding:10px;">${(netto * 0.19).toFixed(2).replace('.', ',')} €</td>
-            </tr>
-            <tr>
-              <td style="padding:10px; font-weight:bold; font-size:16px;">Gesamtbetrag</td>
-              <td style="padding:10px; font-weight:bold; font-size:16px; color:#8B6914;">${(netto * 1.19).toFixed(2).replace('.', ',')} €</td>
-            </tr>
-            <tr style="background:#F5EDD8;">
-              <td style="padding:10px; font-weight:bold;">Lieferart</td>
-              <td style="padding:10px;">${bestellung.lieferart === 'abholung' ? 'Selbstabholung' : 'Lieferung'}</td>
-            </tr>
+            <tr style="background:#F5EDD8;"><td style="padding:10px; font-weight:bold;">Bestellnummer</td><td style="padding:10px;">#${bestellungId}</td></tr>
+            <tr><td style="padding:10px; font-weight:bold;">Nettobetrag</td><td style="padding:10px;">${netto.toFixed(2).replace('.', ',')} €</td></tr>
+            <tr style="background:#F5EDD8;"><td style="padding:10px; font-weight:bold;">MwSt. 19%</td><td style="padding:10px;">${(netto * 0.19).toFixed(2).replace('.', ',')} €</td></tr>
+            <tr><td style="padding:10px; font-weight:bold; font-size:16px;">Gesamtbetrag</td><td style="padding:10px; font-weight:bold; font-size:16px; color:#8B6914;">${(netto * 1.19).toFixed(2).replace('.', ',')} €</td></tr>
+            <tr style="background:#F5EDD8;"><td style="padding:10px; font-weight:bold;">Lieferart</td><td style="padding:10px;">${bestellung.lieferart === 'abholung' ? 'Selbstabholung' : 'Lieferung'}</td></tr>
           </table>
           ${pdfBuffer ? '<p>Ihre Rechnung finden Sie im Anhang dieser Email.</p>' : ''}
-          <p style="color: #6B7280; font-size: 13px; margin-top: 30px;">
-            Bei Fragen stehen wir Ihnen gerne zur Verfügung.<br>
-            VisioTrade GmbH
-          </p>
+          <p style="color: #6B7280; font-size: 13px; margin-top: 30px;">Bei Fragen stehen wir Ihnen gerne zur Verfügung.<br>VisioTrade GmbH</p>
         </div>
       </div>
     `;
@@ -291,12 +232,7 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
     if (bestellung.email) {
       console.log(`🔄 Sende Email an ${bestellung.email}...`);
       try {
-        await sendeEmail(
-          bestellung.email,
-          `Ihre Bestellung #${bestellungId} bei VisioTrade — Bestätigung & Rechnung`,
-          emailHtml,
-          pdfBuffer
-        );
+        await sendeEmail(bestellung.email, `Ihre Bestellung #${bestellungId} bei VisioTrade — Bestätigung & Rechnung`, emailHtml, pdfBuffer);
         console.log(`✅ Email gesendet an ${bestellung.email}`);
       } catch (emailErr) {
         console.error(`❌ Email Fehler:`, emailErr.message);
@@ -304,14 +240,7 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
     }
 
     if (bestellung.telegram_user_id) {
-      const telegramText = `✅ <b>Bestellung bestätigt!</b>\n\n` +
-        `Bestellung #${bestellungId}\n` +
-        `Netto: ${netto.toFixed(2)} €\n` +
-        `MwSt. 19%: ${(netto * 0.19).toFixed(2)} €\n` +
-        `<b>Gesamt: ${(netto * 1.19).toFixed(2)} €</b>\n\n` +
-        `📧 Ihre Rechnung wurde an ${bestellung.email} gesendet.\n\n` +
-        `Vielen Dank für Ihren Einkauf bei VisioTrade! 🪵`;
-
+      const telegramText = `✅ <b>Bestellung bestätigt!</b>\n\nBestellung #${bestellungId}\nNetto: ${netto.toFixed(2)} €\nMwSt. 19%: ${(netto * 0.19).toFixed(2)} €\n<b>Gesamt: ${(netto * 1.19).toFixed(2)} €</b>\n\n📧 Rechnung wurde an ${bestellung.email} gesendet.\n\nVielen Dank für Ihren Einkauf bei VisioTrade! 🪵`;
       await sendeTelegram(bestellung.telegram_user_id, telegramText);
     }
 
@@ -331,17 +260,13 @@ app.post('/api/stripe/create-session', async (req, res) => {
   try {
     const { bestellung_id, items, kundenname, email, netto } = req.body;
     console.log(`🔄 Erstelle Stripe Session für Bestellung ${bestellung_id}`);
-
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       customer_email: email,
       line_items: items.map(item => ({
         price_data: {
           currency: 'eur',
-          product_data: {
-            name: item.name,
-            description: `${item.gesamt_m2} m²`
-          },
+          product_data: { name: item.name, description: `${item.gesamt_m2} m²` },
           unit_amount: Math.round(item.preis * 119)
         },
         quantity: 1
@@ -352,7 +277,6 @@ app.post('/api/stripe/create-session', async (req, res) => {
       metadata: { bestellung_id: String(bestellung_id) },
       locale: 'de'
     });
-
     console.log(`✅ Stripe Session erstellt: ${session.id}`);
     res.json({ url: session.url });
   } catch (err) {
@@ -362,22 +286,15 @@ app.post('/api/stripe/create-session', async (req, res) => {
 });
 
 // ============================
-// STRIPE: Webhook
+// STRIPE: Webhook (ohne Signaturverifikation)
 // ============================
 app.post('/webhook/stripe', async (req, res) => {
-  const sig = req.headers['stripe-signature'];
   let event;
-
   try {
-    try {
-  const payload = req.body.toString('utf8');
-  event = JSON.parse(payload);
-} catch (err) {
-  console.error('❌ Webhook Parse Fehler:', err.message);
-  return res.status(400).send(`Webhook Error: ${err.message}`);
-};
+    const payload = req.body.toString('utf8');
+    event = JSON.parse(payload);
   } catch (err) {
-    console.error('❌ Webhook Signatur Fehler:', err.message);
+    console.error('❌ Webhook Parse Fehler:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -414,33 +331,18 @@ app.post('/api/paypal/create-order', async (req, res) => {
     const { bestellung_id, netto, kundenname } = req.body;
     const brutto = (netto * 1.19).toFixed(2);
     const token = await getPayPalToken();
-
     const order = await fetch('https://api-m.sandbox.paypal.com/v2/checkout/orders', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         intent: 'CAPTURE',
-        purchase_units: [{
-          reference_id: String(bestellung_id),
-          amount: { currency_code: 'EUR', value: brutto },
-          description: `VisioTrade Bestellung #${bestellung_id}`
-        }],
-        application_context: {
-          return_url: `${process.env.FRONTEND_URL}?success=1&bestellung_id=${bestellung_id}&zahlung=paypal`,
-          cancel_url: `${process.env.FRONTEND_URL}?cancelled=1`,
-          locale: 'de-DE',
-          brand_name: 'VisioTrade GmbH'
-        }
+        purchase_units: [{ reference_id: String(bestellung_id), amount: { currency_code: 'EUR', value: brutto }, description: `VisioTrade Bestellung #${bestellung_id}` }],
+        application_context: { return_url: `${process.env.FRONTEND_URL}?success=1&bestellung_id=${bestellung_id}&zahlung=paypal`, cancel_url: `${process.env.FRONTEND_URL}?cancelled=1`, locale: 'de-DE', brand_name: 'VisioTrade GmbH' }
       })
     });
-
     const orderData = await order.json();
     const approveLink = orderData.links?.find(l => l.rel === 'approve')?.href;
     res.json({ url: approveLink, order_id: orderData.id });
-
   } catch (err) {
     console.error('❌ PayPal Error:', err);
     res.status(500).json({ error: err.message });
@@ -452,20 +354,14 @@ app.post('/api/paypal/capture/:orderId', async (req, res) => {
     const { orderId } = req.params;
     const { bestellung_id } = req.body;
     const token = await getPayPalToken();
-
     const capture = await fetch(`https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderId}/capture`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
     });
-
     const captureData = await capture.json();
     if (captureData.status === 'COMPLETED') {
       await bestellungAbwickeln(parseInt(bestellung_id), orderId);
     }
-
     res.json({ status: captureData.status });
   } catch (err) {
     console.error('❌ PayPal Capture Error:', err);
