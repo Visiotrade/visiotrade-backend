@@ -95,7 +95,7 @@ async function sendeEmail(to, subject, html, pdfBuffer = null) {
 // TELEGRAM HELPER
 // ============================
 async function sendeTelegram(chatId, text) {
-  await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -104,9 +104,14 @@ async function sendeTelegram(chatId, text) {
       parse_mode: 'HTML'
     })
   });
+  const data = await res.json();
+  if (!data.ok) console.error('Telegram Fehler:', data);
 }
 
 async function sendeAdminBenachrichtigung(bestellung) {
+  const adminId = process.env.ADMIN_TELEGRAM_ID || process.env.TELEGRAM_ADMIN_ID;
+  if (!adminId) { console.error('Kein Admin Telegram ID!'); return; }
+
   const text = `🛒 <b>Neue Bestellung #${bestellung.id}</b>\n\n` +
     `👤 Kunde: ${bestellung.kundenname}\n` +
     `📧 Email: ${bestellung.email}\n` +
@@ -117,7 +122,7 @@ async function sendeAdminBenachrichtigung(bestellung) {
     `💳 Zahlung: ${bestellung.zahlungsart}\n` +
     `📊 Status: Bezahlt ✅`;
 
-  await sendeTelegram(process.env.ADMIN_TELEGRAM_ID, text);
+  await sendeTelegram(adminId, text);
 }
 
 // ============================
@@ -182,7 +187,6 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
 
   const result = await res.json();
 
-  // PDF herunterladen
   const pdfRes = await fetch(`https://api.lexoffice.io/v1/invoices/${result.id}/document`, {
     headers: { 'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}` }
   });
@@ -199,22 +203,24 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
 // NACH ZAHLUNG: Alles abwickeln
 // ============================
 async function bestellungAbwickeln(bestellungId, zahlungsId) {
+  console.log(`🔄 Starte Abwicklung für Bestellung ${bestellungId}`);
   try {
-    // Bestellung laden
     const bestellungen = await supabaseQuery('bestellungen', `?id=eq.${bestellungId}`);
-    if (!bestellungen || !bestellungen[0]) return;
+    if (!bestellungen || !bestellungen[0]) {
+      console.error(`❌ Bestellung ${bestellungId} nicht gefunden`);
+      return;
+    }
     const bestellung = bestellungen[0];
+    console.log(`✅ Bestellung geladen: ${bestellung.kundenname}`);
 
-    // Positionen laden
     const positionen = await supabaseQuery('bestellpositionen', `?bestellung_id=eq.${bestellungId}`);
 
-    // Status auf "bezahlt" setzen
     await supabaseUpdate('bestellungen', bestellungId, {
       status: 'bezahlt',
       zahlungs_id: zahlungsId
     });
+    console.log(`✅ Status auf bezahlt gesetzt`);
 
-    // Pakete Lager reduzieren
     for (const pos of positionen) {
       if (pos.paket_id) {
         const pakete = await supabaseQuery('pakete', `?id=eq.${pos.paket_id}`);
@@ -224,21 +230,22 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
         }
       }
     }
+    console.log(`✅ Lager aktualisiert`);
 
-    // Lexoffice Rechnung erstellen
     let pdfBuffer = null;
     let lexofficeId = null;
 
     if (process.env.LEXOFFICE_API_KEY) {
+      console.log(`🔄 Erstelle Lexoffice Rechnung...`);
       const lexResult = await erstelleLexofficeRechnung(bestellung, positionen);
       if (lexResult) {
         lexofficeId = lexResult.id;
         pdfBuffer = lexResult.pdfBuffer;
         await supabaseUpdate('bestellungen', bestellungId, { lexoffice_id: lexofficeId });
+        console.log(`✅ Lexoffice Rechnung erstellt: ${lexofficeId}`);
       }
     }
 
-    // Email an Kunden
     const netto = parseFloat(bestellung.gesamtbetrag);
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -282,15 +289,20 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
     `;
 
     if (bestellung.email) {
-      await sendeEmail(
-        bestellung.email,
-        `Ihre Bestellung #${bestellungId} bei VisioTrade — Bestätigung & Rechnung`,
-        emailHtml,
-        pdfBuffer
-      );
+      console.log(`🔄 Sende Email an ${bestellung.email}...`);
+      try {
+        await sendeEmail(
+          bestellung.email,
+          `Ihre Bestellung #${bestellungId} bei VisioTrade — Bestätigung & Rechnung`,
+          emailHtml,
+          pdfBuffer
+        );
+        console.log(`✅ Email gesendet an ${bestellung.email}`);
+      } catch (emailErr) {
+        console.error(`❌ Email Fehler:`, emailErr.message);
+      }
     }
 
-    // Telegram an Kunden
     if (bestellung.telegram_user_id) {
       const telegramText = `✅ <b>Bestellung bestätigt!</b>\n\n` +
         `Bestellung #${bestellungId}\n` +
@@ -303,14 +315,12 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
       await sendeTelegram(bestellung.telegram_user_id, telegramText);
     }
 
-    // Admin Benachrichtigung
+    console.log(`🔄 Sende Admin Benachrichtigung...`);
     await sendeAdminBenachrichtigung(bestellung);
-
-    console.log(`✅ Bestellung ${bestellungId} erfolgreich abgewickelt`);
-ADMIN_TELEGRAM_ID=996932496
+    console.log(`✅ Bestellung ${bestellungId} vollständig abgewickelt`);
 
   } catch (err) {
-    console.error('Fehler bei Bestellabwicklung:', err);
+    console.error(`❌ Fehler bei Bestellabwicklung:`, err);
   }
 }
 
@@ -320,6 +330,7 @@ ADMIN_TELEGRAM_ID=996932496
 app.post('/api/stripe/create-session', async (req, res) => {
   try {
     const { bestellung_id, items, kundenname, email, netto } = req.body;
+    console.log(`🔄 Erstelle Stripe Session für Bestellung ${bestellung_id}`);
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -331,7 +342,7 @@ app.post('/api/stripe/create-session', async (req, res) => {
             name: item.name,
             description: `${item.gesamt_m2} m²`
           },
-          unit_amount: Math.round(item.preis * 119) // Brutto in Cent
+          unit_amount: Math.round(item.preis * 119)
         },
         quantity: 1
       })),
@@ -342,9 +353,10 @@ app.post('/api/stripe/create-session', async (req, res) => {
       locale: 'de'
     });
 
+    console.log(`✅ Stripe Session erstellt: ${session.id}`);
     res.json({ url: session.url });
   } catch (err) {
-    console.error('Stripe Error:', err);
+    console.error('❌ Stripe Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -359,12 +371,16 @@ app.post('/webhook/stripe', async (req, res) => {
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
+    console.error('❌ Webhook Signatur Fehler:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
+
+  console.log(`✅ Webhook empfangen: ${event.type}`);
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
     const bestellungId = parseInt(session.metadata.bestellung_id);
+    console.log(`🔄 Zahlung abgeschlossen für Bestellung ${bestellungId}`);
     await bestellungAbwickeln(bestellungId, session.payment_intent);
   }
 
@@ -403,10 +419,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
         intent: 'CAPTURE',
         purchase_units: [{
           reference_id: String(bestellung_id),
-          amount: {
-            currency_code: 'EUR',
-            value: brutto
-          },
+          amount: { currency_code: 'EUR', value: brutto },
           description: `VisioTrade Bestellung #${bestellung_id}`
         }],
         application_context: {
@@ -423,7 +436,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
     res.json({ url: approveLink, order_id: orderData.id });
 
   } catch (err) {
-    console.error('PayPal Error:', err);
+    console.error('❌ PayPal Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -449,6 +462,7 @@ app.post('/api/paypal/capture/:orderId', async (req, res) => {
 
     res.json({ status: captureData.status });
   } catch (err) {
+    console.error('❌ PayPal Capture Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
