@@ -25,7 +25,6 @@ app.use(express.json());
 // ============================
 async function supabaseQuery(table, params = '') {
   const url = `${process.env.SUPABASE_URL}/rest/v1/${table}${params}`;
-  console.log(`🔍 Supabase Query: ${url}`);
   const res = await fetch(url, {
     headers: {
       'apikey': process.env.SUPABASE_KEY,
@@ -34,9 +33,22 @@ async function supabaseQuery(table, params = '') {
       'Accept': 'application/json'
     }
   });
-  const data = await res.json();
-  console.log(`🔍 Supabase Response (${res.status}):`, JSON.stringify(data).substring(0, 300));
-  return data;
+  return res.json();
+}
+
+async function supabaseInsert(table, data) {
+  const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      'apikey': process.env.SUPABASE_KEY,
+      'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+  return res.json();
 }
 
 async function supabaseUpdate(table, id, data) {
@@ -52,20 +64,6 @@ async function supabaseUpdate(table, id, data) {
     body: JSON.stringify(data)
   });
   return res.ok;
-}
-
-async function supabaseUpdate(table, id, data) {
-  const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
-    method: 'PATCH',
-    headers: {
-      'apikey': process.env.SUPABASE_KEY,
-      'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify(data)
-  });
-  return res.json();
 }
 
 // ============================
@@ -178,12 +176,10 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
 // ============================
 async function bestellungAbwickeln(bestellungId, zahlungsId) {
   console.log(`🔄 Starte Abwicklung für Bestellung ${bestellungId}`);
-  console.log(`🔍 SUPABASE_URL: ${process.env.SUPABASE_URL}`);
-  console.log(`🔍 SUPABASE_KEY prefix: ${process.env.SUPABASE_KEY?.substring(0, 30)}`);
   try {
     const bestellungen = await supabaseQuery('bestellungen', `?id=eq.${bestellungId}`);
     if (!bestellungen || !Array.isArray(bestellungen) || !bestellungen[0]) {
-      console.error(`❌ Bestellung ${bestellungId} nicht gefunden. Response war:`, JSON.stringify(bestellungen));
+      console.error(`❌ Bestellung ${bestellungId} nicht gefunden`);
       return;
     }
     const bestellung = bestellungen[0];
