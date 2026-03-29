@@ -145,7 +145,7 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
       unitName: 'm²',
       unitPrice: {
         currency: 'EUR',
-        netAmount: pos.preis_je_paket / (pos.menge_m2_gesamt / pos.anzahl_pakete),
+        netAmount: Math.round((pos.preis_je_paket / (pos.menge_m2_gesamt / pos.anzahl_pakete)) * 10000) / 10000,
         taxRatePercentage: 19
       },
       discountPercentage: 0
