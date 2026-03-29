@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const fetch = require('node-fetch');
-const nodemailer = require('nodemailer');
+const { createTransport } = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -66,7 +66,7 @@ async function supabaseUpdate(table, id, data) {
 // ============================
 // EMAIL HELPER
 // ============================
-const transporter = nodemailer.createTransporter({
+const transporter = createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || '587'),
   secure: false,
