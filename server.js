@@ -24,14 +24,19 @@ app.use(express.json());
 // SUPABASE HELPER
 // ============================
 async function supabaseQuery(table, params = '') {
-  const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}${params}`, {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${table}${params}`;
+  console.log(`🔍 Supabase Query: ${url}`);
+  const res = await fetch(url, {
     headers: {
       'apikey': process.env.SUPABASE_KEY,
       'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
     }
   });
-  return res.json();
+  const data = await res.json();
+  console.log(`🔍 Supabase Response (${res.status}):`, JSON.stringify(data).substring(0, 300));
+  return data;
 }
 
 async function supabaseInsert(table, data) {
@@ -41,7 +46,8 @@ async function supabaseInsert(table, data) {
       'apikey': process.env.SUPABASE_KEY,
       'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
       'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
+      'Prefer': 'return=representation',
+      'Accept': 'application/json'
     },
     body: JSON.stringify(data)
   });
@@ -54,7 +60,8 @@ async function supabaseUpdate(table, id, data) {
     headers: {
       'apikey': process.env.SUPABASE_KEY,
       'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
     },
     body: JSON.stringify(data)
   });
@@ -171,9 +178,14 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
 // ============================
 async function bestellungAbwickeln(bestellungId, zahlungsId) {
   console.log(`🔄 Starte Abwicklung für Bestellung ${bestellungId}`);
+  console.log(`🔍 SUPABASE_URL: ${process.env.SUPABASE_URL}`);
+  console.log(`🔍 SUPABASE_KEY prefix: ${process.env.SUPABASE_KEY?.substring(0, 30)}`);
   try {
     const bestellungen = await supabaseQuery('bestellungen', `?id=eq.${bestellungId}`);
-    if (!bestellungen || !bestellungen[0]) { console.error(`❌ Bestellung ${bestellungId} nicht gefunden`); return; }
+    if (!bestellungen || !Array.isArray(bestellungen) || !bestellungen[0]) {
+      console.error(`❌ Bestellung ${bestellungId} nicht gefunden. Response war:`, JSON.stringify(bestellungen));
+      return;
+    }
     const bestellung = bestellungen[0];
     console.log(`✅ Bestellung geladen: ${bestellung.kundenname}`);
 
@@ -286,7 +298,7 @@ app.post('/api/stripe/create-session', async (req, res) => {
 });
 
 // ============================
-// STRIPE: Webhook (ohne Signaturverifikation)
+// STRIPE: Webhook
 // ============================
 app.post('/webhook/stripe', async (req, res) => {
   let event;
