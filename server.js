@@ -153,6 +153,7 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
     totalPrice: { currency: 'EUR', totalNetAmount: netto, totalTaxAmount: mwst, totalGrossAmount: brutto },
     taxConditions: { taxType: 'net' },
     paymentConditions: { paymentTermLabel: 'Sofortzahlung', paymentTermDuration: 0 },
+shippingConditions: { shippingType: 'none' },
     introduction: 'Vielen Dank für Ihren Einkauf bei VisioTrade GmbH.',
     remark: 'Bitte überweisen Sie den Betrag auf unser Konto.'
   };
