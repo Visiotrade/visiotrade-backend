@@ -307,12 +307,6 @@ async function bestellungAbwickeln(bestellungId, zahlungsId) {
     await sendeAdminBenachrichtigung(bestellung);
 
     console.log(`✅ Bestellung ${bestellungId} erfolgreich abgewickelt`);
-```
-
-Warte — ich schaue mir den Code nochmal an. Das Problem ist wahrscheinlich dass `ADMIN_TELEGRAM_ID` falsch heißt. Im server.js steht `process.env.ADMIN_TELEGRAM_ID` aber in Railway haben wir `TELEGRAM_ADMIN_ID` eingetragen!
-
-Geh zu Railway → **Variablen** → **Raw-Editor** → füge diese Zeile hinzu:
-```
 ADMIN_TELEGRAM_ID=996932496
 
   } catch (err) {
