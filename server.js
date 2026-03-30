@@ -131,6 +131,27 @@ async function sendeAdminBenachrichtigung(bestellung) {
 // ============================
 // LEXOFFICE HELPER
 // ============================
+async function holeLexofficePdf(rechnungsId, versuche = 5, wartezeit = 5000) {
+  for (let i = 1; i <= versuche; i++) {
+    console.log(`🔄 PDF Versuch ${i}/${versuche}...`);
+    await new Promise(resolve => setTimeout(resolve, wartezeit));
+    const pdfRes = await fetch(`https://api.lexoffice.io/v1/invoices/${rechnungsId}/document`, {
+      headers: {
+        'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`,
+        'Accept': 'application/pdf'
+      }
+    });
+    if (pdfRes.ok) {
+      const pdfBuffer = await pdfRes.buffer();
+      console.log(`✅ PDF geladen nach ${i} Versuch(en) (${pdfBuffer.length} bytes)`);
+      return pdfBuffer;
+    }
+    console.log(`⏳ PDF noch nicht bereit (Status ${pdfRes.status}), warte...`);
+  }
+  console.error(`❌ PDF nach ${versuche} Versuchen nicht verfügbar`);
+  return null;
+}
+
 async function erstelleLexofficeRechnung(bestellung, positionen) {
   const netto = parseFloat(bestellung.gesamtbetrag);
   const mwst = netto * 0.19;
@@ -176,27 +197,9 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
 
   if (!res.ok) { console.error('Lexoffice Fehler:', await res.text()); return null; }
   const result = await res.json();
+  console.log(`✅ Lexoffice Rechnung angelegt: ${result.id}`);
 
-  // 5 Sekunden warten damit Lexoffice das PDF generieren kann
-  console.log(`🔄 Warte auf Lexoffice PDF...`);
-  await new Promise(resolve => setTimeout(resolve, 5000));
-
-  const pdfRes = await fetch(`https://api.lexoffice.io/v1/invoices/${result.id}/document`, {
-    headers: { 
-      'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`,
-      'Accept': 'application/pdf'
-    }
-  });
-  console.log(`🔍 PDF Status: ${pdfRes.status}, Content-Type: ${pdfRes.headers.get('content-type')}`);
-
-  let pdfBuffer = null;
-  if (pdfRes.ok) {
-    pdfBuffer = await pdfRes.buffer();
-    console.log(`✅ Lexoffice PDF geladen (${pdfBuffer.length} bytes)`);
-  } else {
-    console.error(`❌ Lexoffice PDF Fehler: ${pdfRes.status}`);
-  }
-
+  const pdfBuffer = await holeLexofficePdf(result.id);
   return { id: result.id, pdfBuffer };
 }
 
@@ -348,7 +351,7 @@ app.post('/webhook/stripe', async (req, res) => {
 });
 
 // ============================
-// PAYPAL: Order erstellen
+// PAYPAL
 // ============================
 async function getPayPalToken() {
   const res = await fetch('https://api-m.sandbox.paypal.com/v1/oauth2/token', {
