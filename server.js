@@ -278,7 +278,7 @@ app.post('/api/paypal/capture/:orderId', async (req, res) => {
     const { orderId } = req.params;
     const { bestellung_id } = req.body;
     const token = await getPayPalToken();
-    const capture = await fetch(`https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderId}/capture`, {
+    const capture = await fetch(`https://api-m.paypal.com/v2/checkout/orders/${orderId}/capture`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
     });
