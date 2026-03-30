@@ -1,4 +1,4 @@
- require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -429,7 +429,7 @@ app.post('/api/paypal/capture/:orderId', async (req, res) => {
 // ============================
 app.get('/', (req, res) => {
   res.json({ status: 'VisioTrade Backend läuft ✅', time: new Date().toISOString() });
-});
+}); 
 
 app.listen(PORT, () => {
   console.log(`✅ VisioTrade Backend läuft auf Port ${PORT}`);
