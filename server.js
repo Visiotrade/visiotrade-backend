@@ -8,11 +8,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors({
-  origin: [
-    'https://visiotrade-shop.vercel.app',
-    'https://*.vercel.app',
-    'http://localhost:3000'
-  ]
+  origin: function(origin, callback) {
+    if (!origin || 
+        origin === 'https://visiotrade-shop.vercel.app' ||
+        origin.endsWith('.vercel.app') ||
+        origin === 'http://localhost:3000') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
 }));
 
 app.use('/webhook/stripe', express.raw({ type: 'application/json' }));
