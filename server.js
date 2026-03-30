@@ -163,21 +163,38 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
     introduction: 'Vielen Dank für Ihren Einkauf bei VisioTrade GmbH.',
     remark: 'Bitte überweisen Sie den Betrag auf unser Konto.'
   };
+
   const res = await fetch('https://api.lexoffice.io/v1/invoices?finalize=true', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    headers: {
+      'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
     body: JSON.stringify(rechnung)
   });
+
   if (!res.ok) { console.error('Lexoffice Fehler:', await res.text()); return null; }
   const result = await res.json();
-  // Warte 5 Sekunden damit Lexoffice das PDF generieren kann
+
+  // 5 Sekunden warten damit Lexoffice das PDF generieren kann
+  console.log(`🔄 Warte auf Lexoffice PDF...`);
   await new Promise(resolve => setTimeout(resolve, 5000));
+
   const pdfRes = await fetch(`https://api.lexoffice.io/v1/invoices/${result.id}/document`, {
     headers: { 'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}` }
   });
+
   let pdfBuffer = null;
-  if (pdfRes.ok) pdfBuffer = await pdfRes.buffer();
+  if (pdfRes.ok) {
+    pdfBuffer = await pdfRes.buffer();
+    console.log(`✅ Lexoffice PDF geladen (${pdfBuffer.length} bytes)`);
+  } else {
+    console.error(`❌ Lexoffice PDF Fehler: ${pdfRes.status}`);
+  }
+
   return { id: result.id, pdfBuffer };
+}
 
 // ============================
 // NACH ZAHLUNG: Alles abwickeln
