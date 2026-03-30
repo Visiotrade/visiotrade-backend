@@ -182,8 +182,12 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
   await new Promise(resolve => setTimeout(resolve, 5000));
 
   const pdfRes = await fetch(`https://api.lexoffice.io/v1/invoices/${result.id}/document`, {
-    headers: { 'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}` }
+    headers: { 
+      'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`,
+      'Accept': 'application/pdf'
+    }
   });
+  console.log(`🔍 PDF Status: ${pdfRes.status}, Content-Type: ${pdfRes.headers.get('content-type')}`);
 
   let pdfBuffer = null;
   if (pdfRes.ok) {
