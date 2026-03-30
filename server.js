@@ -170,13 +170,14 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
   });
   if (!res.ok) { console.error('Lexoffice Fehler:', await res.text()); return null; }
   const result = await res.json();
+  // Warte 5 Sekunden damit Lexoffice das PDF generieren kann
+  await new Promise(resolve => setTimeout(resolve, 5000));
   const pdfRes = await fetch(`https://api.lexoffice.io/v1/invoices/${result.id}/document`, {
     headers: { 'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}` }
   });
   let pdfBuffer = null;
   if (pdfRes.ok) pdfBuffer = await pdfRes.buffer();
   return { id: result.id, pdfBuffer };
-}
 
 // ============================
 // NACH ZAHLUNG: Alles abwickeln
