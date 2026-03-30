@@ -3,7 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const fetch = require('node-fetch');
-const { createTransport } = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -67,31 +66,38 @@ async function supabaseUpdate(table, id, data) {
 }
 
 // ============================
-// EMAIL HELPER
+// EMAIL HELPER (Brevo HTTP API)
 // ============================
-const transporter = createTransport({
-  host: process.env.SMTP_HOST,
-  port: 465,
-secure: true,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
-
 async function sendeEmail(to, subject, html, pdfBuffer = null) {
-  const mailOptions = {
-    from: '"VisioTrade GmbH" <visiotradegmbh@gmail.com>',
-    to,
+  const body = {
+    sender: { name: 'VisioTrade GmbH', email: 'visiotradegmbh@gmail.com' },
+    to: [{ email: to }],
     subject,
-    html,
-    attachments: pdfBuffer ? [{
-      filename: 'Rechnung_VisioTrade.pdf',
-      content: pdfBuffer,
-      contentType: 'application/pdf'
-    }] : []
+    htmlContent: html
   };
-  return transporter.sendMail(mailOptions);
+
+  if (pdfBuffer) {
+    body.attachment = [{
+      name: 'Rechnung_VisioTrade.pdf',
+      content: pdfBuffer.toString('base64')
+    }];
+  }
+
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Brevo Fehler: ${err}`);
+  }
+  return res.json();
 }
 
 // ============================
@@ -153,7 +159,7 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
     totalPrice: { currency: 'EUR', totalNetAmount: netto, totalTaxAmount: mwst, totalGrossAmount: brutto },
     taxConditions: { taxType: 'net' },
     paymentConditions: { paymentTermLabel: 'Sofortzahlung', paymentTermDuration: 0 },
-shippingConditions: { shippingType: 'none' },
+    shippingConditions: { shippingType: 'none' },
     introduction: 'Vielen Dank für Ihren Einkauf bei VisioTrade GmbH.',
     remark: 'Bitte überweisen Sie den Betrag auf unser Konto.'
   };
