@@ -434,7 +434,7 @@ app.post('/api/paypal/capture/:orderId', async (req, res) => {
 // ============================
 app.get('/', (req, res) => {
   res.json({ status: 'VisioTrade Backend läuft ✅', time: new Date().toISOString() });
-}); 
+});
 
 app.listen(PORT, () => {
   console.log(`✅ VisioTrade Backend läuft auf Port ${PORT}`);
