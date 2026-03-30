@@ -234,10 +234,14 @@ app.post('/webhook/stripe', async (req, res) => {
 });
 
 async function getPayPalToken() {
-  const res = await fetch('https://api-m.sandbox.paypal.com/v1/oauth2/token', {
+  const clientId = process.env.PAYPAL_CLIENT_ID;
+  const secret = process.env.PAYPAL_SECRET;
+  console.log(`PayPal Client ID Länge: ${clientId ? clientId.length : 'FEHLT'}`);
+  console.log(`PayPal Secret Länge: ${secret ? secret.length : 'FEHLT'}`);
+  const res = await fetch('https://api-m.paypal.com/v1/oauth2/token', {
     method: 'POST',
     headers: {
-      'Authorization': `Basic ${Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_SECRET}`).toString('base64')}`,
+      'Authorization': `Basic ${Buffer.from(`${clientId}:${secret}`).toString('base64')}`,
       'Content-Type': 'application/x-www-form-urlencoded'
     },
     body: 'grant_type=client_credentials'
@@ -254,7 +258,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
     const brutto = (netto * 1.19).toFixed(2);
     const token = await getPayPalToken();
     console.log(`🔄 Token erhalten: ${token ? 'JA' : 'NEIN'}`);
-    const order = await fetch('https://api-m.sandbox.paypal.com/v2/checkout/orders', {
+    const order = await fetch('https://api-m.paypal.com/v2/checkout/orders', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
