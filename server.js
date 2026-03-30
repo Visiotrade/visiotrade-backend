@@ -131,27 +131,6 @@ async function sendeAdminBenachrichtigung(bestellung) {
 // ============================
 // LEXOFFICE HELPER
 // ============================
-async function holeLexofficePdf(rechnungsId, versuche = 5, wartezeit = 5000) {
-  for (let i = 1; i <= versuche; i++) {
-    console.log(`🔄 PDF Versuch ${i}/${versuche}...`);
-    await new Promise(resolve => setTimeout(resolve, wartezeit));
-    const pdfRes = await fetch(`https://api.lexoffice.io/v1/invoices/${rechnungsId}/document`, {
-      headers: {
-        'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`,
-        'Accept': 'application/pdf'
-      }
-    });
-    if (pdfRes.ok) {
-      const pdfBuffer = await pdfRes.buffer();
-      console.log(`✅ PDF geladen nach ${i} Versuch(en) (${pdfBuffer.length} bytes)`);
-      return pdfBuffer;
-    }
-    console.log(`⏳ PDF noch nicht bereit (Status ${pdfRes.status}), warte...`);
-  }
-  console.error(`❌ PDF nach ${versuche} Versuchen nicht verfügbar`);
-  return null;
-}
-
 async function erstelleLexofficeRechnung(bestellung, positionen) {
   const netto = parseFloat(bestellung.gesamtbetrag);
   const mwst = netto * 0.19;
@@ -185,6 +164,7 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
     remark: 'Bitte überweisen Sie den Betrag auf unser Konto.'
   };
 
+  // Schritt 1: Rechnung erstellen
   const res = await fetch('https://api.lexoffice.io/v1/invoices?finalize=true', {
     method: 'POST',
     headers: {
@@ -199,7 +179,42 @@ async function erstelleLexofficeRechnung(bestellung, positionen) {
   const result = await res.json();
   console.log(`✅ Lexoffice Rechnung angelegt: ${result.id}`);
 
-  const pdfBuffer = await holeLexofficePdf(result.id);
+  // Schritt 2: PDF-Rendering auslösen
+  console.log(`🔄 Löse PDF-Rendering aus...`);
+  const renderRes = await fetch(`https://api.lexoffice.io/v1/invoices/${result.id}/document`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  let pdfBuffer = null;
+
+  if (renderRes.ok) {
+    const renderData = await renderRes.json();
+    const documentFileId = renderData.documentFileId;
+    console.log(`✅ PDF DocumentFileId: ${documentFileId}`);
+
+    // Schritt 3: PDF herunterladen
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    const pdfRes = await fetch(`https://api.lexoffice.io/v1/files/${documentFileId}`, {
+      headers: {
+        'Authorization': `Bearer ${process.env.LEXOFFICE_API_KEY}`,
+        'Accept': 'application/pdf'
+      }
+    });
+
+    if (pdfRes.ok) {
+      pdfBuffer = await pdfRes.buffer();
+      console.log(`✅ PDF heruntergeladen (${pdfBuffer.length} bytes)`);
+    } else {
+      console.error(`❌ PDF Download Fehler: ${pdfRes.status}`);
+    }
+  } else {
+    console.error(`❌ PDF Rendering Fehler: ${renderRes.status} - ${await renderRes.text()}`);
+  }
+
   return { id: result.id, pdfBuffer };
 }
 
