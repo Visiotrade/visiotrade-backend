@@ -81,7 +81,7 @@ secure: false,
 
 async function sendeEmail(to, subject, html, pdfBuffer = null) {
   const mailOptions = {
-    from: `"VisioTrade GmbH" <${process.env.SMTP_USER}>`,
+    from: '"VisioTrade GmbH" <visiotradegmbh@gmail.com>',
     to,
     subject,
     html,
